@@ -393,10 +393,10 @@ func (g *Gateway) ResolvePeer(ctx context.Context, tgUserID int64) (string, stri
 	return "", "", 0, errors.New("user not resolvable")
 }
 
-// MarkRead clears the unread badge on Telegram's side so the peer sees
-// the read receipt when the user reads the chat in the panel. Best
-// effort: errors are logged by the caller, never user-facing.
-func (g *Gateway) MarkRead(ctx context.Context, chat store.Chat) error {
+// MarkRead marks the chat read on Telegram's side up to maxTgMsgID so
+// the peer sees the read receipt. Best effort: errors are logged by the
+// caller, never user-facing.
+func (g *Gateway) MarkRead(ctx context.Context, chat store.Chat, maxTgMsgID int) error {
 	g.mu.RLock()
 	client := g.client
 	g.mu.RUnlock()
@@ -407,8 +407,33 @@ func (g *Gateway) MarkRead(ctx context.Context, chat store.Chat) error {
 	if err != nil {
 		return err
 	}
-	_, err = client.API().MessagesReadHistory(ctx, &tg.MessagesReadHistoryRequest{Peer: peer, MaxID: 0})
+	_, err = client.API().MessagesReadHistory(ctx, &tg.MessagesReadHistoryRequest{Peer: peer, MaxID: maxTgMsgID})
 	return err
+}
+
+// PeerReadOutbox reports how far the peer has read our outgoing
+// messages (max tg message id), for the ✓/✓✓ ticks in the panel.
+func (g *Gateway) PeerReadOutbox(ctx context.Context, chat store.Chat) (int, error) {
+	g.mu.RLock()
+	client := g.client
+	g.mu.RUnlock()
+	if client == nil {
+		return 0, errors.New("telegram: not connected")
+	}
+	peer, err := g.peerInput(ctx, client, chat)
+	if err != nil {
+		return 0, err
+	}
+	res, err := client.API().MessagesGetPeerDialogs(ctx, []tg.InputDialogPeerClass{&tg.InputDialogPeer{Peer: peer}})
+	if err != nil {
+		return 0, err
+	}
+	for _, d := range res.Dialogs {
+		if dialog, ok := d.(*tg.Dialog); ok {
+			return dialog.ReadOutboxMaxID, nil
+		}
+	}
+	return 0, nil
 }
 
 // SendText delivers text as the logged-in user and returns the Telegram

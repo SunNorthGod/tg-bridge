@@ -147,6 +147,7 @@ input, textarea { font: inherit; }
 .msg .pending::after { content: "…"; animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
 .msg .time { font-size: 10.5px; color: #ffffff59; margin-top: 5px; text-align: right; }
+.msg .ticks { color: #9fd0ff; letter-spacing: -1px; }
 
 #loader-row { text-align: center; padding: 4px 0; }
 #load-more {
@@ -255,15 +256,21 @@ input, textarea { font: inherit; }
 }
 
 /* ---------- mobile ---------- */
+/* Backdrop only exists on mobile; the desktop drawer never opens. */
+#drawer-backdrop { display: none; }
+#drawer-backdrop[hidden] { display: none; }
 @media (max-width: 768px) {
+  #drawer-backdrop {
+    display: block;
+    position: fixed; inset: 0; z-index: 15;
+    background: rgba(0,0,0,.4);
+  }
   #sidebar {
     position: fixed; top: 0; bottom: 0; left: 0; width: min(84vw, 330px);
     z-index: 20; transform: translateX(-102%); transition: transform .18s ease;
   }
   #app.list-open #sidebar { transform: none; box-shadow: 8px 0 30px rgba(0,0,0,.45); }
-  #app.list-open::after {
-    content: ""; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 15;
-  }
+  #app.list-open #drawer-backdrop { display: block; }
   #back { display: block; }
   .msg { max-width: 86%; }
 }

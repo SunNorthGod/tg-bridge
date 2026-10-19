@@ -17,6 +17,7 @@ type Event struct {
 type MsgPayload struct {
 	ID        int64  `json:"id"`
 	ChatID    int64  `json:"chat_id"`
+	TgMsgID   int64  `json:"tg_msg_id"`
 	Direction string `json:"direction"` // "in" | "out"
 	Source    string `json:"source_text"`
 	Target    string `json:"target_text"`
@@ -30,6 +31,7 @@ func PayloadFromMessage(m *store.Message) MsgPayload {
 	return MsgPayload{
 		ID:        m.ID,
 		ChatID:    m.ChatID,
+		TgMsgID:   m.TgMsgID,
 		Direction: m.Direction,
 		Source:    m.SourceText,
 		Target:    m.TargetText,

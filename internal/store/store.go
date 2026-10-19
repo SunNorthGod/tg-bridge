@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -105,9 +106,17 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 `
 
 func (s *Store) migrate() error {
-	_, err := s.db.Exec(schema)
-	if err != nil {
+	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate: %w", err)
+	}
+	// Incremental columns on pre-existing installs; harmless when fresh.
+	for _, stmt := range []string{
+		`ALTER TABLE chats ADD COLUMN last_read_msg_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE chats ADD COLUMN read_outbox_max_id INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrate alter: %w", err)
+		}
 	}
 	return nil
 }

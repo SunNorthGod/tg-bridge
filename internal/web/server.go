@@ -35,23 +35,38 @@ const cookieName = "tgb_session"
 type TGAuth interface {
 	AuthStateInfo() string
 	SubmitAuth(action, phone, code, password string) (state, errMsg string)
-	MarkRead(ctx context.Context, chat store.Chat) error
+	MarkRead(ctx context.Context, chat store.Chat, maxTgMsgID int) error
+	PeerReadOutbox(ctx context.Context, chat store.Chat) (int, error)
 }
 
 type Server struct {
-	cfg    config.Server
-	store  *store.Store
-	pipe   *pipeline.Pipeline
-	bus    *pipeline.Bus
-	secret []byte
-	tg     TGAuth
+	cfg      config.Server
+	store    *store.Store
+	pipe     *pipeline.Pipeline
+	bus      *pipeline.Bus
+	secret   []byte
+	tg       TGAuth
+	assetVer string // content hash of embedded assets, for cache-busting URLs
 }
 
 func New(cfg config.Server, st *store.Store, pipe *pipeline.Pipeline, bus *pipeline.Bus, tg TGAuth) (*Server, error) {
 	// Derive the cookie secret from the panel password so sessions
 	// survive restarts; a password change invalidates them all.
 	sum := sha256.Sum256([]byte("tgbridge-panel:" + cfg.Password))
-	return &Server{cfg: cfg, store: st, pipe: pipe, bus: bus, secret: sum[:], tg: tg}, nil
+	ver := md5.Sum(append(readAsset(assets, "assets/static/style.css"), readAsset(assets, "assets/static/app.js")...))
+	return &Server{
+		cfg: cfg, store: st, pipe: pipe, bus: bus,
+		secret: sum[:], tg: tg,
+		assetVer: hex.EncodeToString(ver[:])[:8],
+	}, nil
+}
+
+func readAsset(fs embed.FS, path string) []byte {
+	b, err := fs.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // ListenAndServe runs until ctx is done, then drains gracefully.
@@ -96,8 +111,9 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// handleMarkRead clears the panel unread badge and forwards the read
-// receipt to Telegram so the peer sees it.
+// handleMarkRead advances the panel's read watermark, pushes the read
+// receipt to Telegram, and returns the peer's read-outbox watermark so
+// the UI can draw ✓/✓✓ on outgoing messages.
 func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -109,10 +125,36 @@ func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]string{"error": "chat not found"})
 		return
 	}
-	if err := s.tg.MarkRead(r.Context(), *chat); err != nil {
-		slog.Warn("mark read failed", "chat_id", id, "err", err)
+	rowID, tgMsgID, err := s.store.LatestMessage(id)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
 	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
+	if rowID > 0 {
+		if err := s.store.SetChatReadWatermark(id, rowID); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	readOutbox := 0
+	if ob, err := s.tg.PeerReadOutbox(r.Context(), *chat); err == nil {
+		readOutbox = ob
+		if ob > 0 {
+			_ = s.store.SetChatReadOutbox(id, int64(ob))
+		}
+	} else {
+		slog.Warn("read outbox query failed", "chat_id", id, "err", err)
+	}
+	// Fall back to chat-stored watermark when the live query failed.
+	if readOutbox == 0 && chat.ReadOutboxMaxID > 0 {
+		readOutbox = int(chat.ReadOutboxMaxID)
+	}
+	if tgMsgID > 0 || rowID > 0 {
+		if err := s.tg.MarkRead(r.Context(), *chat, int(tgMsgID)); err != nil {
+			slog.Warn("tg mark read failed", "chat_id", id, "err", err)
+		}
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "read_outbox": readOutbox})
 }
 
 // --- stats page (server-rendered) ---
@@ -129,6 +171,7 @@ type statsView struct {
 	Kinds            []store.KindStats
 	Chats            []store.ChatStats
 	Statuses         map[string]int64
+	V                string
 }
 
 func (s *Server) handleStatsPage(w http.ResponseWriter, r *http.Request) {
@@ -166,6 +209,7 @@ func (s *Server) handleStatsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
+	view.V = s.assetVer
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tpl.Execute(w, view); err != nil {
 		slog.Error("stats render", "err", err)
@@ -307,12 +351,15 @@ func (s *Server) writeAsset(w http.ResponseWriter, r *http.Request, path, fallba
 			break
 		}
 	}
-	// Standard caching: content-hash ETag with 304 revalidation and a
-	// short max-age. Assets are embedded, so they only change when the
-	// binary is redeployed.
+	// Standard caching: hashed-asset ETag with a short max-age; HTML is
+	// always revalidated so a redeploy is picked up immediately.
 	etag := fmt.Sprintf(`"%x"`, md5.Sum(b))
 	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "max-age=300")
+	if strings.HasSuffix(path, ".html") {
+		w.Header().Set("Cache-Control", "no-cache")
+	} else {
+		w.Header().Set("Cache-Control", "max-age=300")
+	}
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return
@@ -331,7 +378,16 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
-	s.writeAsset(w, r, "assets/templates/index.html", "text/html; charset=utf-8")
+	tpl, err := template.ParseFS(assets, "assets/templates/index.html")
+	if err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	if err := tpl.Execute(w, map[string]string{"V": s.assetVer}); err != nil {
+		slog.Error("index render", "err", err)
+	}
 }
 
 // --- JSON APIs ---
@@ -361,12 +417,13 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request) {
 		Username    string `json:"username"`
 		Title       string `json:"title"`
 		Enabled     bool   `json:"enabled"`
+		Unread      int    `json:"unread"`
 		LastSnippet string `json:"last_snippet"`
 		LastTime    string `json:"last_time"`
 	}
 	out := make([]chatOut, 0, len(chats))
 	for _, c := range chats {
-		out = append(out, chatOut{c.ID, c.TgUserID, c.Username, c.Title, c.Enabled, c.LastSnippet, c.LastTime})
+		out = append(out, chatOut{c.ID, c.TgUserID, c.Username, c.Title, c.Enabled, c.Unread, c.LastSnippet, c.LastTime})
 	}
 	writeJSON(w, 200, out)
 }

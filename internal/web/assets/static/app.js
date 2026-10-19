@@ -13,7 +13,9 @@ let current = null;
 let oldest = 0;
 let total = 0;
 let tempSeq = 0;
+let currentReadOutbox = 0; // peer's read watermark for the open chat
 const seen = new Set(); // message row ids already rendered
+const localUnread = {}; // in-session badge increments, calibrated by /api/chats
 
 /* ---------- helpers ---------- */
 
@@ -50,11 +52,11 @@ function toast(text) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 3800);
 }
 
-/* ---------- unread (panel-side, persisted per browser) ---------- */
+/* ---------- unread (server watermark + in-session increments) ---------- */
 
-let unread = {};
-try { unread = JSON.parse(localStorage.getItem("tgb-unread") || "{}"); } catch { unread = {}; }
-function saveUnread() { localStorage.setItem("tgb-unread", JSON.stringify(unread)); }
+function unreadFor(c) {
+  return (c.unread || 0) + (localUnread[c.id] || 0);
+}
 
 /* ---------- chat list ---------- */
 
@@ -98,7 +100,7 @@ function renderList() {
     time.className = "chat-time";
     time.textContent = fmtTime(c.last_time);
     right.append(time);
-    const n = unread[c.id] || 0;
+    const n = unreadFor(c);
     if (n > 0) {
       const badge = document.createElement("span");
       badge.className = "badge";
@@ -195,7 +197,14 @@ function renderMsg(m) {
   if (sub.textContent) div.append(sub);
   const t = document.createElement("div");
   t.className = "time";
-  t.textContent = fmtTime(m.created_at);
+  // Read ticks on outgoing messages, from the peer's outbox watermark.
+  if (m.direction === "out" && m.status !== "pending" && m.status !== "failed" && m.tg_msg_id > 0) {
+    const tick = document.createElement("span");
+    tick.className = "ticks";
+    tick.textContent = m.tg_msg_id <= currentReadOutbox ? "✓✓ " : "✓ ";
+    t.append(tick);
+  }
+  t.append(document.createTextNode(fmtTime(m.created_at)));
   div.append(t);
   return div;
 }
@@ -244,36 +253,44 @@ async function loadMessages(before) {
   scrollBottom();
 }
 
+function setDrawer(open) {
+  app.classList.toggle("list-open", open);
+  $("#drawer-backdrop").hidden = !open;
+}
+
 async function openChat(id) {
   current = chats.find((c) => c.id === id) || null;
   if (!current) return;
+  setDrawer(false);
   $("#empty-hint").hidden = true;
   $("#peer-name").textContent = chatName(current);
   $("#peer-sub").textContent = current.username ? "@" + current.username : "";
   const pa = $("#peer-avatar");
   pa.style.background = `hsl(${hueOf(String(current.tg_user_id))} 48% 42%)`;
   pa.textContent = (chatName(current)[0] || "?").toUpperCase();
-  app.classList.remove("list-open");
   oldest = 0;
-  await loadMessages(0);
-  renderList();
-  inputEl.focus();
 
-  // Clear the panel badge and push the read receipt to Telegram so the
-  // peer sees "read" even when we read from the panel.
-  if (unread[id]) {
-    delete unread[id];
-    saveUnread();
+  // Advance the read watermark server-side, push the receipt to
+  // Telegram, and learn the peer's outbox watermark for the ticks.
+  const read = await api(`/api/chats/${id}/read`, { method: "POST" }).catch(() => null);
+  if (read && typeof read.read_outbox === "number") {
+    currentReadOutbox = read.read_outbox;
+  }
+  if (localUnread[id]) {
+    delete localUnread[id];
     renderList();
   }
-  api(`/api/chats/${id}/read`, { method: "POST" }).catch(() => {});
+  await loadMessages(0);
+  renderList();
+  loadChats().catch(() => {}); // recalibrate the server-side badge
+  inputEl.focus();
 }
 
 /* ---------- sending ---------- */
 
 async function sendMsg() {
-  if (!current) { toast("先在左侧选择一个对话"); app.classList.add("list-open"); return; }
-  if (!current.enabled) { toast("该对话未启用翻译"); app.classList.add("list-open"); return; }
+  if (!current) { toast("先在左侧选择一个对话"); setDrawer(true); return; }
+  if (!current.enabled) { toast("该对话未启用翻译"); setDrawer(true); return; }
   const text = inputEl.value.trim();
   if (!text) return;
 
@@ -320,8 +337,7 @@ function connectStream() {
           appendMsg(data.message);
         }
       } else {
-        unread[data.chat_id] = (unread[data.chat_id] || 0) + 1;
-        saveUnread();
+        localUnread[data.chat_id] = (localUnread[data.chat_id] || 0) + 1;
         renderList();
       }
     } else if (data.type === "chats") {
@@ -375,7 +391,7 @@ async function boot() {
   }
   // On phones the chat pane starts empty; lead with the list instead.
   if (window.matchMedia("(max-width: 768px)").matches) {
-    app.classList.add("list-open");
+    setDrawer(true);
   }
   loadChats().catch((e) => toast("加载对话失败: " + e.message));
   connectStream();
@@ -407,7 +423,8 @@ inputEl.addEventListener("keydown", (ev) => {
   }
 });
 inputEl.addEventListener("input", autoGrow);
-$("#back").addEventListener("click", () => app.classList.add("list-open"));
+$("#back").addEventListener("click", () => setDrawer(true));
+$("#drawer-backdrop").addEventListener("click", () => setDrawer(false));
 $("#load-more").addEventListener("click", () => loadMessages(oldest));
 
 boot();
