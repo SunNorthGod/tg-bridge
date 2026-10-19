@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/md5"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -49,11 +48,10 @@ type Server struct {
 }
 
 func New(cfg config.Server, st *store.Store, pipe *pipeline.Pipeline, bus *pipeline.Bus, tg TGAuth) (*Server, error) {
-	secret := make([]byte, 32)
-	if _, err := rand.Read(secret); err != nil {
-		return nil, fmt.Errorf("generate session secret: %w", err)
-	}
-	return &Server{cfg: cfg, store: st, pipe: pipe, bus: bus, secret: secret, tg: tg}, nil
+	// Derive the cookie secret from the panel password so sessions
+	// survive restarts; a password change invalidates them all.
+	sum := sha256.Sum256([]byte("tgbridge-panel:" + cfg.Password))
+	return &Server{cfg: cfg, store: st, pipe: pipe, bus: bus, secret: sum[:], tg: tg}, nil
 }
 
 // ListenAndServe runs until ctx is done, then drains gracefully.
@@ -354,6 +352,9 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
+	// Panels should show names, not raw IDs: kick off profile lookups
+	// for chats that still lack them.
+	s.pipe.TryResolvePeers(chats)
 	type chatOut struct {
 		ID          int64  `json:"id"`
 		TgUserID    int64  `json:"tg_user_id"`

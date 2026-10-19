@@ -10,15 +10,17 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"time"
 
 	"tgbridge/internal/ctxengine"
 	"tgbridge/internal/store"
 	"tgbridge/internal/tggw"
 )
 
-// Sender is the MTProto send capability; implemented by tggw.Gateway.
+// Sender is the MTProto capability set; implemented by tggw.Gateway.
 type Sender interface {
 	SendText(ctx context.Context, chat store.Chat, text string) (int, error)
+	ResolvePeer(ctx context.Context, tgUserID int64) (username, title string, accessHash int64, err error)
 }
 
 // OutResult is the synchronous reply to a web send request.
@@ -54,18 +56,22 @@ type Pipeline struct {
 	sender  Sender
 	mu      sync.Mutex
 	workers map[int64]chan job
+
+	peerMu    sync.Mutex
+	peerTried map[int64]time.Time
 }
 
 // New wires the pipeline. The MTProto sender is attached later via
 // SetSender because the gateway and the pipeline reference each other.
 func New(ctx context.Context, st *store.Store, eng *ctxengine.Engine, bus *Bus, sender Sender) *Pipeline {
 	return &Pipeline{
-		ctx:     ctx,
-		store:   st,
-		engine:  eng,
-		bus:     bus,
-		sender:  sender,
-		workers: make(map[int64]chan job),
+		ctx:       ctx,
+		store:     st,
+		engine:    eng,
+		bus:       bus,
+		sender:    sender,
+		workers:   make(map[int64]chan job),
+		peerTried: make(map[int64]time.Time),
 	}
 }
 
@@ -138,9 +144,56 @@ func (p *Pipeline) OnTGMessage(m tggw.TGMessage) {
 	}
 	p.bus.Publish(Event{Type: "chats"})
 
+	// Chats created by outbound-only updates carry no user record, so
+	// they would show as raw IDs forever. Fetch the profile once (with
+	// throttling) whenever the display name is still unknown.
+	if chat.Title == "" && chat.Username == "" {
+		p.maybeResolvePeer(m.TgUserID)
+	}
+
 	if chat.Enabled || m.Out {
 		p.enqueue(chatID, job{incoming: &incomingJob{rowID: rowID, chatID: chatID, translate: translate}})
 	}
+}
+
+// TryResolvePeers kicks off profile lookups for chats still showing raw
+// IDs; called when the panel loads the chat list. Throttled internally.
+func (p *Pipeline) TryResolvePeers(chats []store.ChatListItem) {
+	for _, c := range chats {
+		if c.PeerType == "user" && c.Title == "" && c.Username == "" {
+			p.maybeResolvePeer(c.TgUserID)
+		}
+	}
+}
+
+// maybeResolvePeer fetches display name/username/access hash for a peer
+// whose profile is still unknown. One attempt per 10 minutes per peer;
+// runs off the update goroutine.
+func (p *Pipeline) maybeResolvePeer(tgUserID int64) {
+	p.peerMu.Lock()
+	if t, ok := p.peerTried[tgUserID]; ok && time.Since(t) < 10*time.Minute {
+		p.peerMu.Unlock()
+		return
+	}
+	p.peerTried[tgUserID] = time.Now()
+	p.peerMu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(p.ctx, 15*time.Second)
+		defer cancel()
+		sender := p.senderNow()
+		if sender == nil {
+			return
+		}
+		username, title, hash, err := sender.ResolvePeer(ctx, tgUserID)
+		if err != nil || (username == "" && title == "" && hash == 0) {
+			return
+		}
+		if _, err := p.store.UpsertChatFromTG("user", tgUserID, hash, username, title); err != nil {
+			return
+		}
+		p.bus.Publish(Event{Type: "chats"})
+	}()
 }
 
 // RequeuePending re-dispatches inbound messages stuck in pending by a

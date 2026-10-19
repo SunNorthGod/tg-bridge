@@ -64,7 +64,7 @@ func (s *Store) TranslateLatencies() ([]int, error) {
 
 func (s *Store) ChatStatsList() ([]ChatStats, error) {
 	rows, err := s.db.Query(`
-SELECT c.id, COALESCE(NULLIF(c.title,''), COALESCE(c.username, CAST(c.tg_user_id AS TEXT))),
+SELECT c.id, COALESCE(NULLIF(c.title,''), COALESCE(NULLIF(c.username,''), CAST(c.tg_user_id AS TEXT))),
        COALESCE(c.username, ''), c.enabled,
        COUNT(m.id),
        COALESCE(SUM(CASE WHEN m.direction='in' THEN 1 ELSE 0 END), 0),

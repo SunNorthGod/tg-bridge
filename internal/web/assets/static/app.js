@@ -247,6 +247,7 @@ async function loadMessages(before) {
 async function openChat(id) {
   current = chats.find((c) => c.id === id) || null;
   if (!current) return;
+  $("#empty-hint").hidden = true;
   $("#peer-name").textContent = chatName(current);
   $("#peer-sub").textContent = current.username ? "@" + current.username : "";
   const pa = $("#peer-avatar");
@@ -371,6 +372,10 @@ async function boot() {
     $("#auth-wizard").hidden = false;
     switchWizardView(st.status);
     return;
+  }
+  // On phones the chat pane starts empty; lead with the list instead.
+  if (window.matchMedia("(max-width: 768px)").matches) {
+    app.classList.add("list-open");
   }
   loadChats().catch((e) => toast("加载对话失败: " + e.message));
   connectStream();

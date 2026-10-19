@@ -28,11 +28,14 @@
         <span id="peer-sub"></span>
       </div>
     </header>
+    <div id="empty-hint">从左侧选择一个对话开始翻译聊天</div>
     <div id="msgs"></div>
     <div id="loader-row"><button id="load-more" hidden>加载更早消息</button></div>
     <form id="composer">
       <textarea id="input" rows="1" placeholder="输入中文,回车发送(Shift+回车换行)"></textarea>
-      <button id="send" type="submit">发送</button>
+      <button id="send" type="submit" aria-label="发送">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
     </form>
   </main>
 </div>

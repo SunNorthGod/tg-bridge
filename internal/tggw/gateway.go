@@ -363,13 +363,34 @@ func (g *Gateway) onMessage(class tg.MessageClass, edit bool, peers map[int64]*t
 func (g *Gateway) peerInput(ctx context.Context, client *telegram.Client, chat store.Chat) (*tg.InputPeerUser, error) {
 	hash := chat.AccessHash
 	if hash == 0 {
-		resolved, err := g.resolveAccessHash(ctx, client, chat.TgUserID)
+		_, _, resolved, err := g.ResolvePeer(ctx, chat.TgUserID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve access hash: %w", err)
 		}
 		hash = resolved
 	}
 	return &tg.InputPeerUser{UserID: chat.TgUserID, AccessHash: hash}, nil
+}
+
+// ResolvePeer fetches a user's display name, username and access hash.
+// Implements pipeline.Sender.
+func (g *Gateway) ResolvePeer(ctx context.Context, tgUserID int64) (string, string, int64, error) {
+	g.mu.RLock()
+	client := g.client
+	g.mu.RUnlock()
+	if client == nil {
+		return "", "", 0, errors.New("telegram: not connected")
+	}
+	users, err := client.API().UsersGetUsers(ctx, []tg.InputUserClass{&tg.InputUser{UserID: tgUserID}})
+	if err != nil {
+		return "", "", 0, err
+	}
+	for _, u := range users {
+		if user, ok := u.(*tg.User); ok && user.ID == tgUserID {
+			return user.Username, strings.TrimSpace(user.FirstName + " " + user.LastName), user.AccessHash, nil
+		}
+	}
+	return "", "", 0, errors.New("user not resolvable")
 }
 
 // MarkRead clears the unread badge on Telegram's side so the peer sees
@@ -420,19 +441,6 @@ func (g *Gateway) SendText(ctx context.Context, chat store.Chat, text string) (i
 		return 0, fmt.Errorf("send message: %w", err)
 	}
 	return extractMsgID(res), nil
-}
-
-func (g *Gateway) resolveAccessHash(ctx context.Context, client *telegram.Client, userID int64) (int64, error) {
-	users, err := client.API().UsersGetUsers(ctx, []tg.InputUserClass{&tg.InputUser{UserID: userID}})
-	if err != nil {
-		return 0, err
-	}
-	for _, u := range users {
-		if user, ok := u.(*tg.User); ok && user.ID == userID && user.AccessHash != 0 {
-			return user.AccessHash, nil
-		}
-	}
-	return 0, errors.New("user not resolvable")
 }
 
 func extractMsgID(class tg.UpdatesClass) int {
