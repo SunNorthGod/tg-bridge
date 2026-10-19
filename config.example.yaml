@@ -1,0 +1,50 @@
+# TG 桥 配置示例 — 复制为 config.yaml 后填写
+# 密钥类字段建议全部用环境变量注入,config.yaml 只留非敏感配置。
+
+telegram:
+  # https://my.telegram.org → API development tools 申请
+  api_id: 123456
+  api_hash: "0123456789abcdef0123456789abcdef"
+  # 首次登录在面板网页里完成(手机号在向导中填写,不落配置);之后 session 持久化免登
+  session_file: "data/session.json"
+
+llm:
+  endpoints:
+    - name: deepseek
+      base_url: "https://api.deepseek.com/v1"
+      api_key: "sk-替换成你的key"
+      model: "deepseek-chat"
+    # 备用端点:主端点连续失败时自动切换,恢复后切回。
+    # 任意 OpenAI 兼容服务均可:
+    # - name: glm
+    #   base_url: "https://open.bigmodel.cn/api/paas/v4"
+    #   api_key: "xxx"
+    #   model: "glm-4.7"
+  timeout_seconds: 15      # 单次请求超时
+  max_retries: 2           # 每个端点重试次数(退避 1s/4s)
+  temperature: 1.3         # DeepSeek 官方翻译场景建议值
+  max_tokens: 2048
+  summary_max_tokens: 800  # 摘要调用的输出上限
+
+context:
+  # 滑窗 token 水位:超过后触发一次压缩(前半并入摘要,后半保留)。
+  # 水位越高翻译上下文越足、缓存命中越长,费用与延迟也越高。
+  window_watermark: 4000
+  # 压缩后保留的比例(保留最新的一半)
+  window_keep_ratio: 0.5
+  # 滚动摘要封顶(估算 token)
+  summary_max: 400
+  # 对话静默超过该小时数,下次翻译前先压缩
+  idle_recompact_hours: 12
+  # 单条消息超过该字数则分块翻译
+  max_input_chars: 500
+
+server:
+  listen: "0.0.0.0:8080"
+  data_dir: "data"
+  # 访问密码:推荐环境变量 TGBRIDGE_PASSWORD 注入,此处留空。
+  # 为空且环境变量也为空时程序拒绝启动。
+  # password: ""
+
+log:
+  level: "info"

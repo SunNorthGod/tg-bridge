@@ -1,0 +1,13 @@
+# 运行数据与凭证,永不入库
+data/
+config.yaml
+*.session
+*.session.json
+
+# 构建产物
+tgbridge
+tgbridge.exe
+tgbridge-*
+*.db
+*.db-wal
+*.db-shm

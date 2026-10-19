@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TG 桥</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <header class="side-head">
+      <h1>TG 桥</h1>
+      <nav>
+        <a href="/stats" target="_blank" class="link-dim">统计</a>
+        <a href="/logout" class="link-dim">退出</a>
+      </nav>
+    </header>
+    <ul id="chat-list"></ul>
+    <p id="chat-empty" hidden>还没有对话。在 Telegram 客户端里给对方发条消息(或等对方发来),对话就会出现在这里,打开开关即启用翻译。</p>
+  </aside>
+  <main id="chat">
+    <header id="chat-head">
+      <button id="back" aria-label="返回对话列表">‹</button>
+      <span id="peer-avatar" class="avatar peer-avatar"></span>
+      <div class="head-meta">
+        <strong id="peer-name">选择对话</strong>
+        <span id="peer-sub"></span>
+      </div>
+    </header>
+    <div id="msgs"></div>
+    <div id="loader-row"><button id="load-more" hidden>加载更早消息</button></div>
+    <form id="composer">
+      <textarea id="input" rows="1" placeholder="输入中文,回车发送(Shift+回车换行)"></textarea>
+      <button id="send" type="submit">发送</button>
+    </form>
+  </main>
+</div>
+<div id="toast" hidden></div>
+<div id="auth-wizard" hidden>
+  <div class="wizard-card">
+    <h2>Telegram 授权</h2>
+    <p class="wizard-sub">首次使用需登录 Telegram 账号,整个过程在本页完成</p>
+    <div id="w-phone" class="wizard-view">
+      <label>Telegram 账号的手机号(国际格式)</label>
+      <input id="w-phone-input" placeholder="+8613800138000" autocomplete="tel">
+      <button id="w-phone-btn" class="wizard-btn">发送验证码</button>
+    </div>
+    <div id="w-code" class="wizard-view" hidden>
+      <label>输入手机上收到的验证码(TG 应用内或短信)</label>
+      <input id="w-code-input" inputmode="numeric" autocomplete="one-time-code">
+      <button id="w-code-btn" class="wizard-btn">验证</button>
+      <button id="w-code-resend" class="wizard-ghost">重新发送验证码</button>
+    </div>
+    <div id="w-pass" class="wizard-view" hidden>
+      <label>该账号开启了两步验证,输入云密码</label>
+      <input id="w-pass-input" type="password" autocomplete="current-password">
+      <button id="w-pass-btn" class="wizard-btn">验证</button>
+    </div>
+    <p id="w-err" class="wizard-err" hidden></p>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

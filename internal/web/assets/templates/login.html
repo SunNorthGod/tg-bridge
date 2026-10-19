@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>登录 · TG 桥</title>
+<style>
+:root { color-scheme: dark; }
+* { box-sizing: border-box; margin: 0; }
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  min-height: 100dvh; display: flex; align-items: center; justify-content: center;
+  background: #14161a; color: #e8e6e3;
+}
+.card {
+  width: min(92vw, 340px); padding: 32px 28px; border-radius: 16px;
+  background: #1d2026; border: 1px solid #2c3038;
+}
+h1 { font-size: 20px; margin-bottom: 6px; }
+p { font-size: 13px; color: #9aa0aa; margin-bottom: 24px; }
+input {
+  width: 100%; padding: 12px 14px; font-size: 16px; border-radius: 10px;
+  border: 1px solid #3a3f48; background: #14161a; color: inherit; outline: none;
+}
+input:focus { border-color: #4c8bf5; }
+button {
+  width: 100%; margin-top: 14px; padding: 12px; font-size: 15px; font-weight: 600;
+  border: none; border-radius: 10px; background: #4c8bf5; color: #fff; cursor: pointer;
+}
+button:active { opacity: .85; }
+.err { color: #ef6b6b; font-size: 13px; margin-top: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<form class="card" method="post" action="/login">
+  <h1>TG 桥</h1>
+  <p>输入访问密码</p>
+  <input type="password" name="password" autofocus autocomplete="current-password">
+  <button type="submit">进入</button>
+  <div class="err" id="err" hidden>密码错误</div>
+</form>
+<script>
+if (new URLSearchParams(location.search).has('e')) {
+  document.getElementById('err').hidden = false;
+}
+</script>
+</body>
+</html>

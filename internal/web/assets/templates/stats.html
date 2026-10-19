@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TG 桥 · 统计</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="stats-body">
+<main class="stats-wrap">
+  <header class="stats-head">
+    <a href="/" class="stats-back">‹ 返回聊天</a>
+    <h1>运行统计</h1>
+  </header>
+
+  <section class="stats-cards">
+    <div class="stat-card">
+      <div class="stat-num">{{.Calls}}</div>
+      <div class="stat-label">LLM 调用</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">{{.PromptTokens}}</div>
+      <div class="stat-label">输入 tokens · 命中 {{.HitRatePct}}%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">{{.CompletionTokens}}</div>
+      <div class="stat-label">输出 tokens</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">{{.AvgMS}}ms</div>
+      <div class="stat-label">翻译延迟 · P95 {{.P95MS}}ms</div>
+    </div>
+  </section>
+
+  <section class="stats-block">
+    <h2>调用类型</h2>
+    <table class="stats-table">
+      <tr><th>类型</th><th>次数</th><th>输入</th><th>缓存命中</th><th>输出</th><th>累计耗时</th></tr>
+      {{range .Kinds}}
+      <tr>
+        <td>{{.Kind}}</td><td>{{.Calls}}</td>
+        <td>{{.PromptTokens}}</td><td>{{.CachedTokens}}</td>
+        <td>{{.CompletionTokens}}</td><td>{{.TotalMS}}ms</td>
+      </tr>
+      {{else}}
+      <tr><td colspan="6">还没有调用记录</td></tr>
+      {{end}}
+    </table>
+  </section>
+
+  <section class="stats-block">
+    <h2>对话</h2>
+    <table class="stats-table">
+      <tr><th>对话</th><th>状态</th><th>消息(收/发)</th><th>已翻译</th><th>tokens</th></tr>
+      {{range .Chats}}
+      <tr>
+        <td>{{.Title}}</td>
+        <td>{{if .Enabled}}启用{{else}}停用{{end}}</td>
+        <td>{{.Msgs}}({{.InMsgs}}/{{.OutMsgs}})</td>
+        <td>{{.Done}}</td>
+        <td>{{.Tokens}}</td>
+      </tr>
+      {{else}}
+      <tr><td colspan="5">还没有对话</td></tr>
+      {{end}}
+    </table>
+  </section>
+
+  <section class="stats-block">
+    <h2>消息状态分布</h2>
+    <div class="stats-chips">
+      {{range $k, $v := .Statuses}}
+      <span class="chip">{{$k}} × {{$v}}</span>
+      {{end}}
+    </div>
+  </section>
+</main>
+</body>
+</html>
