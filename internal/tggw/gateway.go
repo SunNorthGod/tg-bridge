@@ -373,7 +373,9 @@ func (g *Gateway) peerInput(ctx context.Context, client *telegram.Client, chat s
 }
 
 // ResolvePeer fetches a user's display name, username and access hash.
-// Implements pipeline.Sender.
+// Implements pipeline.Sender. UsersGetUsers cannot resolve peers that
+// are not contacts, so the dialog list is used as a fallback — any
+// existing conversation carries a full access hash there.
 func (g *Gateway) ResolvePeer(ctx context.Context, tgUserID int64) (string, string, int64, error) {
 	g.mu.RLock()
 	client := g.client
@@ -382,11 +384,29 @@ func (g *Gateway) ResolvePeer(ctx context.Context, tgUserID int64) (string, stri
 		return "", "", 0, errors.New("telegram: not connected")
 	}
 	users, err := client.API().UsersGetUsers(ctx, []tg.InputUserClass{&tg.InputUser{UserID: tgUserID}})
+	if err == nil {
+		for _, u := range users {
+			if user, ok := u.(*tg.User); ok && user.ID == tgUserID {
+				return user.Username, strings.TrimSpace(user.FirstName + " " + user.LastName), user.AccessHash, nil
+			}
+		}
+	}
+	dialogs, err := client.API().MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
+		OffsetPeer: &tg.InputPeerEmpty{},
+		Limit:      100,
+	})
 	if err != nil {
 		return "", "", 0, err
 	}
-	for _, u := range users {
-		if user, ok := u.(*tg.User); ok && user.ID == tgUserID {
+	var dlgUsers []tg.UserClass
+	switch d := dialogs.(type) {
+	case *tg.MessagesDialogs:
+		dlgUsers = d.Users
+	case *tg.MessagesDialogsSlice:
+		dlgUsers = d.Users
+	}
+	for _, uc := range dlgUsers {
+		if user, ok := uc.(*tg.User); ok && user.ID == tgUserID {
 			return user.Username, strings.TrimSpace(user.FirstName + " " + user.LastName), user.AccessHash, nil
 		}
 	}
