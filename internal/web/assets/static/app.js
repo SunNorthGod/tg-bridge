@@ -201,7 +201,7 @@ function renderMsg(m) {
   if (m.direction === "out" && m.status !== "pending" && m.status !== "failed" && m.tg_msg_id > 0) {
     const tick = document.createElement("span");
     tick.className = "ticks";
-    tick.textContent = m.tg_msg_id <= currentReadOutbox ? "✓✓ " : "✓ ";
+    tick.innerHTML = ticksSVG(m.tg_msg_id <= currentReadOutbox);
     t.append(tick);
   }
   t.append(document.createTextNode(fmtTime(m.created_at)));
@@ -217,16 +217,32 @@ function appendMsg(m, force = false) {
   if (stick) scrollBottom();
 }
 
+// replaceTemp settles an optimistic bubble once the POST responds.
+// The SSE stream may have already rendered the real message (or even
+// replaced the temp node itself) — every path converges to exactly one
+// bubble keyed by the row id.
 function replaceTemp(tempId, m) {
   const node = msgsEl.querySelector(`[data-id="${tempId}"]`);
+  const already = seen.has(m.id);
   seen.delete(tempId);
-  if (node) {
+  seen.add(m.id);
+  if (node && already) {
+    node.remove();
+  } else if (node) {
     node.replaceWith(renderMsg(m));
     scrollBottom();
-  } else {
+  } else if (!already) {
     appendMsg(m);
   }
-  seen.add(m.id);
+}
+
+// ticksSVG draws Telegram-style check marks: one stroke for sent, a
+// second offset stroke once the peer has read the message.
+function ticksSVG(read) {
+  const stroke = "fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"";
+  const first = `<path d="M1 6.5 L4.5 10 L10.5 3.5" ${stroke}/>`;
+  const second = `<path d="M7.5 6.5 L11 10 L17 3.5" ${stroke}/>`;
+  return `<svg class="tick" width="18" height="13" viewBox="0 0 18 13" aria-hidden="true">${first}${read ? second : ""}</svg>`;
 }
 
 async function loadMessages(before) {

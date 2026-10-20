@@ -147,7 +147,8 @@ input, textarea { font: inherit; }
 .msg .pending::after { content: "…"; animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
 .msg .time { font-size: 10.5px; color: #ffffff59; margin-top: 5px; text-align: right; }
-.msg .ticks { color: #9fd0ff; letter-spacing: -1px; }
+.msg .ticks { color: #7cc7ff; vertical-align: -2px; margin-right: 3px; }
+.msg .ticks .tick { display: inline-block; vertical-align: middle; }
 
 #loader-row { text-align: center; padding: 4px 0; }
 #load-more {
