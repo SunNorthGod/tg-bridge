@@ -66,6 +66,12 @@ journalctl -u tgbridge -f               # 看日志
 更新二进制:本地 `GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w"
 -o tgbridge ./cmd/tgbridge` 后上传覆盖 /opt/tgbridge/tgbridge 并 restart。
 
+**自启**:unit 已 `systemctl enable`(开机自启)+ `Restart=always`
+(任何退出 5 秒内自愈)。教训:2026-10-20 服务器重启一次,当时未
+enable 导致服务缺席两天——任何新部署完成都必须 enable --now。
+离线期间(TG 网关未运行时)到达的消息不会被补收,面板里没有对应
+记录,需在 TG 客户端查看。
+
 ## 已完成
 
 | 模块 | 文件 | 说明 |
