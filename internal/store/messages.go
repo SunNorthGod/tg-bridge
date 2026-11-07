@@ -8,29 +8,30 @@ import (
 )
 
 type Message struct {
-	ID          int64
-	ChatID      int64
-	TgMsgID     int64
-	EditRev     int
-	Direction   string // "in" | "out"
+	ID           int64
+	ChatID       int64
+	TgMsgID      int64
+	EditRev      int
+	Direction    string // "in" | "out"
 	LangDetected string
-	SourceText  string
-	TargetText  string
-	Status      string // pending | translating | done | failed | skipped
-	TokensIn    int
+	SourceText   string
+	TargetText   string
+	Status       string // pending | translating | done | failed | skipped | deleted
+	Reactions    string // JSON [{"e":"😍","c":1}], managed via SetMessageReactions
+	TokensIn     int
 	CachedTokens int
-	TokensOut   int
-	LatencyMS   int
-	CreatedAt   string
-	UpdatedAt   string
+	TokensOut    int
+	LatencyMS    int
+	CreatedAt    string
+	UpdatedAt    string
 }
 
-const msgCols = `id, chat_id, tg_msg_id, edit_rev, direction, lang_detected, source_text, target_text, status, tokens_in, cached_tokens, tokens_out, latency_ms, created_at, updated_at`
+const msgCols = `id, chat_id, tg_msg_id, edit_rev, direction, lang_detected, source_text, target_text, status, reactions, tokens_in, cached_tokens, tokens_out, latency_ms, created_at, updated_at`
 
 func scanMessage(row interface{ Scan(...any) error }) (*Message, error) {
 	var m Message
 	err := row.Scan(&m.ID, &m.ChatID, &m.TgMsgID, &m.EditRev, &m.Direction, &m.LangDetected,
-		&m.SourceText, &m.TargetText, &m.Status, &m.TokensIn, &m.CachedTokens, &m.TokensOut,
+		&m.SourceText, &m.TargetText, &m.Status, &m.Reactions, &m.TokensIn, &m.CachedTokens, &m.TokensOut,
 		&m.LatencyMS, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -68,6 +69,30 @@ func (s *Store) SetMessageStatus(id int64, status string) error {
 // GetByTgMsg returns the newest revision of a Telegram message, if seen.
 func (s *Store) GetByTgMsg(chatID, tgMsgID int64) (*Message, error) {
 	return scanMessage(s.db.QueryRow(`SELECT `+msgCols+` FROM messages WHERE chat_id=? AND tg_msg_id=? ORDER BY edit_rev DESC LIMIT 1`, chatID, tgMsgID))
+}
+
+// SetMessageReactions stores the reaction summary on the newest
+// revision of a Telegram message.
+func (s *Store) SetMessageReactions(chatID, tgMsgID int64, reactions string) error {
+	_, err := s.db.Exec(`UPDATE messages SET reactions=?, updated_at=? WHERE id=
+		(SELECT id FROM messages WHERE chat_id=? AND tg_msg_id=? ORDER BY edit_rev DESC LIMIT 1)`,
+		reactions, now(), chatID, tgMsgID)
+	return err
+}
+
+// MarkMessageDeleted flags a message as recalled by its sender and
+// reports which chat it belonged to (ok=false when nothing matched).
+func (s *Store) MarkMessageDeleted(tgMsgID int64) (chatID int64, ok bool, err error) {
+	res, err := s.db.Exec(`UPDATE messages SET status='deleted', updated_at=? WHERE tg_msg_id=? AND status != 'deleted'`,
+		now(), tgMsgID)
+	if err != nil {
+		return 0, false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return 0, false, nil
+	}
+	err = s.db.QueryRow(`SELECT chat_id FROM messages WHERE tg_msg_id=? ORDER BY id DESC LIMIT 1`, tgMsgID).Scan(&chatID)
+	return chatID, true, err
 }
 
 // GetMessageByID loads one row by primary key.

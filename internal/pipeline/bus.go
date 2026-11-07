@@ -9,9 +9,13 @@ import (
 // Event is the SSE payload pushed to browsers. One stream carries all
 // chats; the client filters by the currently open conversation.
 type Event struct {
-	Type    string      `json:"type"` // "message" | "chats"
-	ChatID  int64       `json:"chat_id,omitempty"`
-	Message *MsgPayload `json:"message,omitempty"`
+	Type      string      `json:"type"` // message | chats | read_outbox | reactions | deleted | typing | presence
+	ChatID    int64       `json:"chat_id,omitempty"`
+	MaxID     int64       `json:"max_id,omitempty"`
+	TgMsgID   int64       `json:"tg_msg_id,omitempty"`
+	Reactions string      `json:"reactions,omitempty"`
+	Online    bool        `json:"online,omitempty"`
+	Message   *MsgPayload `json:"message,omitempty"`
 }
 
 type MsgPayload struct {
@@ -21,7 +25,8 @@ type MsgPayload struct {
 	Direction string `json:"direction"` // "in" | "out"
 	Source    string `json:"source_text"`
 	Target    string `json:"target_text"`
-	Status    string `json:"status"` // done | failed | skipped
+	Status    string `json:"status"` // done | failed | skipped | deleted
+	Reactions string `json:"reactions,omitempty"`
 	Lang      string `json:"lang_detected,omitempty"`
 	CreatedAt string `json:"created_at"`
 }
@@ -36,6 +41,7 @@ func PayloadFromMessage(m *store.Message) MsgPayload {
 		Source:    m.SourceText,
 		Target:    m.TargetText,
 		Status:    m.Status,
+		Reactions: m.Reactions,
 		Lang:      m.LangDetected,
 		CreatedAt: m.CreatedAt,
 	}

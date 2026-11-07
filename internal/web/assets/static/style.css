@@ -149,6 +149,23 @@ input, textarea { font: inherit; }
 .msg .time { font-size: 10.5px; color: #ffffff59; margin-top: 5px; text-align: right; }
 .msg .ticks { color: #7cc7ff; vertical-align: -2px; margin-right: 3px; }
 .msg .ticks .tick { display: inline-block; vertical-align: middle; }
+.msg .deleted { color: #8b97a6; font-style: italic; font-size: 13.5px; }
+.msg.in .deleted { color: #6d7b8d; }
+.react {
+  position: absolute; right: 6px; bottom: -11px;
+  background: linear-gradient(135deg, #3a4c63, #2c3b4e);
+  border: 1px solid #46586e; border-radius: 10px;
+  font-size: 12px; padding: 2px 6px; line-height: 1.2;
+  box-shadow: 0 2px 6px rgba(0,0,0,.35);
+}
+.msg.out .react { background: linear-gradient(135deg, #3d5f8f, #34507a); }
+.head-meta { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.pdot {
+  width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+  background: #4a5a6b; transition: background .2s;
+}
+.pdot.on { background: var(--green); box-shadow: 0 0 6px #2ecc7188; }
+#peer-sub.typing { color: #7cc7ff; }
 
 #loader-row { text-align: center; padding: 4px 0; }
 #load-more {

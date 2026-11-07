@@ -10,6 +10,7 @@ package tggw
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -64,6 +65,11 @@ type TGMessage struct {
 // Sink receives normalized updates; implemented by pipeline.Pipeline.
 type Sink interface {
 	OnTGMessage(msg TGMessage)
+	OnReadOutbox(tgUserID, maxID int64)
+	OnReactions(tgUserID, tgMsgID int64, reactions string)
+	OnMessagesDeleted(tgMsgIDs []int64)
+	OnTyping(tgUserID int64)
+	OnPresence(tgUserID int64, online bool)
 }
 
 // Gateway owns the MTProto connection. It is safe for concurrent use;
@@ -316,8 +322,54 @@ func (g *Gateway) handleUpdates(users []tg.UserClass, updates []tg.UpdateClass) 
 			g.onMessage(v.Message, false, peers)
 		case *tg.UpdateEditMessage:
 			g.onMessage(v.Message, true, peers)
+		case *tg.UpdateReadHistoryOutbox:
+			// The peer read our outgoing messages up to v.MaxID; the
+			// panel needs this to flip ✓ into ✓✓ in real time.
+			if peer, ok := v.Peer.(*tg.PeerUser); ok {
+				g.sink.OnReadOutbox(peer.UserID, int64(v.MaxID))
+			}
+		case *tg.UpdateMessageReactions:
+			if peer, ok := v.Peer.(*tg.PeerUser); ok {
+				g.sink.OnReactions(peer.UserID, int64(v.MsgID), reactionsJSON(v.Reactions.Results))
+			}
+		case *tg.UpdateDeleteMessages:
+			if len(v.Messages) > 0 {
+				ids := make([]int64, len(v.Messages))
+				for i, id := range v.Messages {
+					ids[i] = int64(id)
+				}
+				g.sink.OnMessagesDeleted(ids)
+			}
+		case *tg.UpdateUserTyping:
+			g.sink.OnTyping(v.UserID)
+		case *tg.UpdateUserStatus:
+			_, online := v.Status.(*tg.UserStatusOnline)
+			g.sink.OnPresence(v.UserID, online)
 		}
 	}
+}
+
+// reactionsJSON summarizes emoji reactions as [{"e":"😍","c":1}].
+// Premium custom-emoji reactions carry no emoji text and are skipped.
+func reactionsJSON(counts []tg.ReactionCount) string {
+	type rc struct {
+		E string `json:"e"`
+		C int    `json:"c"`
+	}
+	var out []rc
+	for _, c := range counts {
+		if em, ok := c.Reaction.(*tg.ReactionEmoji); ok {
+			out = append(out, rc{E: em.Emoticon, C: c.Count})
+		}
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // onMessage filters raw message updates down to private text messages.

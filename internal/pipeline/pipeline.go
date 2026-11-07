@@ -156,6 +156,63 @@ func (p *Pipeline) OnTGMessage(m tggw.TGMessage) {
 	}
 }
 
+// OnReadOutbox receives the peer's read watermark as soon as Telegram
+// pushes it; persists it and fans out to the panel so outgoing ticks
+// flip ✓ → ✓✓ without a reload.
+func (p *Pipeline) OnReadOutbox(tgUserID, maxID int64) {
+	chat, err := p.store.GetChatByTgUser(tgUserID)
+	if err != nil {
+		return
+	}
+	if err := p.store.SetChatReadOutbox(chat.ID, maxID); err != nil {
+		return
+	}
+	p.bus.Publish(Event{Type: "read_outbox", ChatID: chat.ID, MaxID: maxID})
+}
+
+// OnReactions stores the reaction summary of a message and pushes it to
+// the panel for the corner badges.
+func (p *Pipeline) OnReactions(tgUserID, tgMsgID int64, reactions string) {
+	chat, err := p.store.GetChatByTgUser(tgUserID)
+	if err != nil {
+		return
+	}
+	if err := p.store.SetMessageReactions(chat.ID, tgMsgID, reactions); err != nil {
+		return
+	}
+	p.bus.Publish(Event{Type: "reactions", ChatID: chat.ID, TgMsgID: tgMsgID, Reactions: reactions})
+}
+
+// OnMessagesDeleted flags recalled messages and tells the panel to
+// swap the bubbles for a "recalled" stub.
+func (p *Pipeline) OnMessagesDeleted(tgMsgIDs []int64) {
+	for _, id := range tgMsgIDs {
+		chatID, ok, err := p.store.MarkMessageDeleted(id)
+		if err != nil || !ok {
+			continue
+		}
+		p.bus.Publish(Event{Type: "deleted", ChatID: chatID, TgMsgID: id})
+	}
+}
+
+// OnTyping relays the peer's typing indicator; transient, not stored.
+func (p *Pipeline) OnTyping(tgUserID int64) {
+	chat, err := p.store.GetChatByTgUser(tgUserID)
+	if err != nil {
+		return
+	}
+	p.bus.Publish(Event{Type: "typing", ChatID: chat.ID})
+}
+
+// OnPresence relays the peer's online/offline transition.
+func (p *Pipeline) OnPresence(tgUserID int64, online bool) {
+	chat, err := p.store.GetChatByTgUser(tgUserID)
+	if err != nil {
+		return
+	}
+	p.bus.Publish(Event{Type: "presence", ChatID: chat.ID, Online: online})
+}
+
 // TryResolvePeers kicks off profile lookups for chats still showing raw
 // IDs; called when the panel loads the chat list. Throttled internally.
 func (p *Pipeline) TryResolvePeers(chats []store.ChatListItem) {

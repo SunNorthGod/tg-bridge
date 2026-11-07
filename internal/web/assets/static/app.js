@@ -16,6 +16,7 @@ let tempSeq = 0;
 let currentReadOutbox = 0; // peer's read watermark for the open chat
 const seen = new Set(); // message row ids already rendered
 const localUnread = {}; // in-session badge increments, calibrated by /api/chats
+const msgCache = new Map(); // row id -> payload, for live tick updates
 
 /* ---------- helpers ---------- */
 
@@ -158,6 +159,19 @@ function renderMsg(m) {
   const div = document.createElement("div");
   div.className = "msg " + (m.direction === "out" ? "out" : "in");
   div.dataset.id = m.id;
+  if (m.tg_msg_id > 0) div.dataset.tgId = m.tg_msg_id;
+  div.style.position = "relative";
+
+  if (m.status === "deleted") {
+    const main = document.createElement("div");
+    main.className = "deleted";
+    main.textContent = "消息已撤回";
+    const t = document.createElement("div");
+    t.className = "time";
+    t.textContent = fmtTime(m.created_at);
+    div.append(main, t);
+    return div;
+  }
 
   const main = document.createElement("div");
   main.className = "main";
@@ -195,13 +209,25 @@ function renderMsg(m) {
 
   div.append(main);
   if (sub.textContent) div.append(sub);
+  if (m.reactions) {
+    try {
+      for (const r of JSON.parse(m.reactions)) {
+        const tag = document.createElement("span");
+        tag.className = "react";
+        tag.textContent = r.e + (r.c > 1 ? " " + r.c : "");
+        div.append(tag);
+      }
+    } catch { /* malformed reactions payload: skip */ }
+  }
   const t = document.createElement("div");
   t.className = "time";
   // Read ticks on outgoing messages, from the peer's outbox watermark.
   if (m.direction === "out" && m.status !== "pending" && m.status !== "failed" && m.tg_msg_id > 0) {
+    const read = m.tg_msg_id <= currentReadOutbox;
     const tick = document.createElement("span");
     tick.className = "ticks";
-    tick.innerHTML = ticksSVG(m.tg_msg_id <= currentReadOutbox);
+    if (read) tick.dataset.read = "1";
+    tick.innerHTML = ticksSVG(read);
     t.append(tick);
   }
   t.append(document.createTextNode(fmtTime(m.created_at)));
@@ -212,6 +238,7 @@ function renderMsg(m) {
 function appendMsg(m, force = false) {
   if (seen.has(m.id) && !force) return;
   seen.add(m.id);
+  msgCache.set(m.id, m);
   const stick = nearBottom();
   msgsEl.appendChild(renderMsg(m));
   if (stick) scrollBottom();
@@ -226,6 +253,7 @@ function replaceTemp(tempId, m) {
   const already = seen.has(m.id);
   seen.delete(tempId);
   seen.add(m.id);
+  msgCache.set(m.id, m);
   if (node && already) {
     node.remove();
   } else if (node) {
@@ -348,6 +376,7 @@ function connectStream() {
         if (String(data.message.id).startsWith("tmp-")) return;
         const node = msgsEl.querySelector(`[data-id="${data.message.id}"]`);
         if (node) {
+          msgCache.set(data.message.id, data.message);
           node.replaceWith(renderMsg(data.message));
         } else {
           appendMsg(data.message);
@@ -356,11 +385,77 @@ function connectStream() {
         localUnread[data.chat_id] = (localUnread[data.chat_id] || 0) + 1;
         renderList();
       }
+    } else if (data.type === "read_outbox") {
+      // Peer read our messages: flip ✓ → ✓✓ live on the open chat.
+      if (current && data.chat_id === current.id && data.max_id > currentReadOutbox) {
+        currentReadOutbox = data.max_id;
+        for (const node of msgsEl.querySelectorAll(".msg.out .ticks")) {
+          if (node.dataset.read) continue;
+          const id = Number(node.closest(".msg")?.dataset.id);
+          const m = msgCache.get(id);
+          if (m && m.tg_msg_id > 0 && m.tg_msg_id <= currentReadOutbox) {
+            node.dataset.read = "1";
+            node.innerHTML = ticksSVG(true);
+          }
+        }
+      }
+    } else if (data.type === "reactions") {
+      if (current && data.chat_id === current.id) {
+        const node = msgsEl.querySelector(`[data-tg-id="${data.tg_msg_id}"]`);
+        if (node) {
+          for (const old of node.querySelectorAll(".react")) old.remove();
+          try {
+            for (const r of JSON.parse(data.reactions || "[]")) {
+              const tag = document.createElement("span");
+              tag.className = "react";
+              tag.textContent = r.e + (r.c > 1 ? " " + r.c : "");
+              node.append(tag);
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } else if (data.type === "deleted") {
+      if (current && data.chat_id === current.id) {
+        const node = msgsEl.querySelector(`[data-tg-id="${data.tg_msg_id}"]`);
+        if (node) {
+          node.replaceWith(renderMsg({
+            id: node.dataset.id ? Number(node.dataset.id) : 0,
+            chat_id: data.chat_id, tg_msg_id: data.tg_msg_id,
+            direction: node.classList.contains("out") ? "out" : "in",
+            source_text: "", status: "deleted", created_at: new Date().toISOString(),
+          }));
+        }
+      }
+    } else if (data.type === "typing") {
+      if (current && data.chat_id === current.id) showTyping();
+    } else if (data.type === "presence") {
+      if (current && data.chat_id === current.id) setPresence(data.online);
     } else if (data.type === "chats") {
       clearTimeout(chatsRefreshTimer);
       chatsRefreshTimer = setTimeout(loadChats, 300);
     }
   };
+}
+
+/* ---------- typing & presence indicators ---------- */
+
+let typingTimer = null;
+let currentSubText = "";
+function showTyping() {
+  const el = $("#peer-sub");
+  if (!current) return;
+  currentSubText = el.textContent;
+  el.textContent = "正在输入…";
+  el.classList.add("typing");
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => {
+    el.textContent = current.username ? "@" + current.username : currentSubText;
+    el.classList.remove("typing");
+  }, 3500);
+}
+
+function setPresence(online) {
+  $("#peer-dot").classList.toggle("on", !!online);
 }
 
 /* ---------- TG auth wizard ---------- */

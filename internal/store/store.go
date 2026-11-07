@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS messages (
   source_text   TEXT NOT NULL,
   target_text   TEXT,
   status        TEXT NOT NULL DEFAULT 'pending',
+  reactions     TEXT NOT NULL DEFAULT '',
   tokens_in     INTEGER NOT NULL DEFAULT 0,
   cached_tokens INTEGER NOT NULL DEFAULT 0,
   tokens_out    INTEGER NOT NULL DEFAULT 0,
@@ -113,6 +114,7 @@ func (s *Store) migrate() error {
 	for _, stmt := range []string{
 		`ALTER TABLE chats ADD COLUMN last_read_msg_id INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE chats ADD COLUMN read_outbox_max_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE messages ADD COLUMN reactions TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("migrate alter: %w", err)
