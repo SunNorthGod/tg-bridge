@@ -151,6 +151,16 @@ input, textarea { font: inherit; }
 .msg .ticks .tick { display: inline-block; vertical-align: middle; }
 .msg .deleted { color: #8b97a6; font-style: italic; font-size: 13.5px; }
 .msg.in .deleted { color: #6d7b8d; }
+.msg .quote {
+  border-left: 3px solid var(--accent);
+  background: rgba(82, 136, 193, .14);
+  color: #9ab8d5; font-size: 12.5px; line-height: 1.4;
+  padding: 3px 8px; border-radius: 6px; margin-bottom: 5px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer;
+}
+.msg .quote:hover { color: #c4d9ee; background: rgba(82, 136, 193, .22); }
+.msg.out .quote { border-left-color: #9cc0e8; background: rgba(255, 255, 255, .08); color: #cfe0f2; }
 .react {
   position: absolute; right: 6px; bottom: -11px;
   background: linear-gradient(135deg, #3a4c63, #2c3b4e);

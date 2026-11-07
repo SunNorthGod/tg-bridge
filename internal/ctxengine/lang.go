@@ -36,11 +36,31 @@ func CJKRatio(s string) float64 {
 	return float64(cjk) / float64(total)
 }
 
-// IsChinese reports whether the text is predominantly Chinese. Used to
-// decide translation direction without an LLM call: outgoing (user's
-// own) Chinese goes to the model, anything else is delivered as-is.
+func cjkCount(s string) int {
+	var n int
+	for _, r := range s {
+		if isCJK(r) {
+			n++
+		}
+	}
+	return n
+}
+
+// IsChinese reports whether the text is predominantly Chinese — the
+// peer writing Chinese directly, nothing left to translate. The
+// absolute floor keeps a Ukrainian sentence quoting a couple of hanzi
+// inside the translation flow.
 func IsChinese(s string) bool {
-	return CJKRatio(s) >= 0.5
+	return cjkCount(s) >= 4 && CJKRatio(s) >= 0.5
+}
+
+// HasChineseInput reports whether the user's own draft carries Chinese
+// content and must go through translation. Brand names, URLs and emoji
+// dilute CJKRatio — "对的，反重力Google Antigravity。我很感兴趣" is 10
+// hanzi against 17 latin letters — so the outgoing check counts hanzi
+// instead of their share.
+func HasChineseInput(s string) bool {
+	return cjkCount(s) >= 2
 }
 
 // EstimateTokens gives a rough token count for watermark accounting

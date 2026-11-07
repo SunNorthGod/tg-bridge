@@ -115,6 +115,8 @@ func (s *Store) migrate() error {
 		`ALTER TABLE chats ADD COLUMN last_read_msg_id INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE chats ADD COLUMN read_outbox_max_id INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE messages ADD COLUMN reactions TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN reply_to INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE messages ADD COLUMN reply_snippet TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("migrate alter: %w", err)

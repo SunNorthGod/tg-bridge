@@ -75,10 +75,38 @@ func TestLanguageDetection(t *testing.T) {
 		{"OK", false},
 		{"123 😊", false},
 		{"", false},
+		// A Ukrainian line quoting a couple of hanzi stays translatable.
+		{"В Китае есть игра такая rf4 游戏", false},
+		// Mixed CJK + latin from the peer must not skip translation.
+		{"对的，反重力Google Antigravity。我很感兴趣", false},
 	}
 	for _, c := range cases {
 		if got := IsChinese(c.in); got != c.want {
 			t.Errorf("IsChinese(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+func TestHasChineseInput(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		// User drafts with hanzi go through translation, whatever the
+		// brand names, URLs or emoji around them.
+		{"对的，反重力Google Antigravity。我很感兴趣", true},
+		{"这个游戏玩的人不算多 https://rf4game.com/cn/", true},
+		{"好的", true},
+		{"好的Google", true},
+		// No hanzi: deliver verbatim.
+		{"Hello there my friend", false},
+		{"Привіт, як справи?", false},
+		{"OK 123 😊", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := HasChineseInput(c.in); got != c.want {
+			t.Errorf("HasChineseInput(%q) = %v, want %v", c.in, got, c.want)
 		}
 	}
 }

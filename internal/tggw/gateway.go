@@ -58,8 +58,10 @@ type TGMessage struct {
 	Title      string
 	MsgID      int
 	Text       string
-	Out        bool // true = sent by our own account from any device
-	Edit       bool
+	Out        bool   // true = sent by our own account from any device
+	Edit       bool   // true = an edit update for an existing message
+	ReplyTo    int64  // Telegram message id being replied to, 0 = none
+	Quote      string // quote fragment the sender selected, may be empty
 }
 
 // Sink receives normalized updates; implemented by pipeline.Pipeline.
@@ -298,6 +300,8 @@ func (g *Gateway) Handle(ctx context.Context, class tg.UpdatesClass) error {
 			MsgID:    u.ID,
 			Text:     u.Message,
 			Out:      u.Out,
+			ReplyTo:  replyHeaderID(u.ReplyTo),
+			Quote:    quoteText(u.ReplyTo),
 		})
 	case *tg.UpdateShort:
 		g.handleUpdates(nil, []tg.UpdateClass{u.Update})
@@ -407,7 +411,26 @@ func (g *Gateway) onMessage(class tg.MessageClass, edit bool, peers map[int64]*t
 		Text:       m.Message,
 		Out:        m.Out,
 		Edit:       edit,
+		ReplyTo:    replyHeaderID(m.ReplyTo),
+		Quote:      quoteText(m.ReplyTo),
 	})
+}
+
+// replyHeaderID extracts the replied-to message id; 0 when the update
+// carries no reply header or a story header we do not track.
+func replyHeaderID(h tg.MessageReplyHeaderClass) int64 {
+	if r, ok := h.(*tg.MessageReplyHeader); ok {
+		return int64(r.ReplyToMsgID)
+	}
+	return 0
+}
+
+// quoteText returns the manually selected quote fragment of a reply.
+func quoteText(h tg.MessageReplyHeaderClass) string {
+	if r, ok := h.(*tg.MessageReplyHeader); ok {
+		return strings.TrimSpace(r.QuoteText)
+	}
+	return ""
 }
 
 // peerInput builds the InputPeer for a chat, resolving an unknown

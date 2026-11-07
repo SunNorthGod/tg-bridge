@@ -177,11 +177,28 @@ function renderMsg(m) {
   main.className = "main";
   const sub = document.createElement("div");
 
+  if (m.reply_to > 0) {
+    const q = document.createElement("div");
+    q.className = "quote";
+    q.textContent = m.reply_snippet || "引用了一条消息";
+    q.title = "跳到被引用的消息";
+    q.addEventListener("click", () => {
+      const target = msgsEl.querySelector(`[data-tg-id="${m.reply_to}"]`);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+      else toast("被引用的消息不在本地记录");
+    });
+    div.append(q);
+  }
+
   if (m.direction === "out") {
     main.textContent = m.source_text;
     if (m.status === "done" || m.status === "skipped") {
-      sub.className = "sub";
-      sub.textContent = m.target_text;
+      // Verbatim sends (non-Chinese input) carry target == source;
+      // echoing it back would print the same text twice.
+      if (m.target_text && m.target_text !== m.source_text) {
+        sub.className = "sub";
+        sub.textContent = m.target_text;
+      }
     } else if (m.status === "failed") {
       sub.className = "note";
       sub.textContent = "发送失败,内容未送达";

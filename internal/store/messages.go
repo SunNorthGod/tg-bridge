@@ -18,6 +18,8 @@ type Message struct {
 	TargetText   string
 	Status       string // pending | translating | done | failed | skipped | deleted
 	Reactions    string // JSON [{"e":"😍","c":1}], managed via SetMessageReactions
+	ReplyTo      int64  // Telegram message id being replied to, 0 = none
+	ReplySnippet string // display text of the quoted message, resolved on insert
 	TokensIn     int
 	CachedTokens int
 	TokensOut    int
@@ -26,12 +28,13 @@ type Message struct {
 	UpdatedAt    string
 }
 
-const msgCols = `id, chat_id, tg_msg_id, edit_rev, direction, lang_detected, source_text, target_text, status, reactions, tokens_in, cached_tokens, tokens_out, latency_ms, created_at, updated_at`
+const msgCols = `id, chat_id, tg_msg_id, edit_rev, direction, lang_detected, source_text, target_text, status, reactions, reply_to, reply_snippet, tokens_in, cached_tokens, tokens_out, latency_ms, created_at, updated_at`
 
 func scanMessage(row interface{ Scan(...any) error }) (*Message, error) {
 	var m Message
 	err := row.Scan(&m.ID, &m.ChatID, &m.TgMsgID, &m.EditRev, &m.Direction, &m.LangDetected,
-		&m.SourceText, &m.TargetText, &m.Status, &m.Reactions, &m.TokensIn, &m.CachedTokens, &m.TokensOut,
+		&m.SourceText, &m.TargetText, &m.Status, &m.Reactions, &m.ReplyTo, &m.ReplySnippet,
+		&m.TokensIn, &m.CachedTokens, &m.TokensOut,
 		&m.LatencyMS, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -44,11 +47,12 @@ func scanMessage(row interface{ Scan(...any) error }) (*Message, error) {
 
 func (s *Store) InsertMessage(m *Message) (int64, error) {
 	const q = `
-INSERT INTO messages (chat_id, tg_msg_id, edit_rev, direction, lang_detected, source_text, target_text, status, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+INSERT INTO messages (chat_id, tg_msg_id, edit_rev, direction, lang_detected, source_text, target_text, status, reactions, reply_to, reply_snippet, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	m.CreatedAt, m.UpdatedAt = now(), now()
 	res, err := s.db.Exec(q, m.ChatID, m.TgMsgID, m.EditRev, m.Direction, m.LangDetected,
-		m.SourceText, m.TargetText, m.Status, m.CreatedAt, m.UpdatedAt)
+		m.SourceText, m.TargetText, m.Status, m.Reactions, m.ReplyTo, m.ReplySnippet,
+		m.CreatedAt, m.UpdatedAt)
 	if err != nil {
 		return 0, fmt.Errorf("insert message: %w", err)
 	}

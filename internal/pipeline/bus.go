@@ -19,31 +19,35 @@ type Event struct {
 }
 
 type MsgPayload struct {
-	ID        int64  `json:"id"`
-	ChatID    int64  `json:"chat_id"`
-	TgMsgID   int64  `json:"tg_msg_id"`
-	Direction string `json:"direction"` // "in" | "out"
-	Source    string `json:"source_text"`
-	Target    string `json:"target_text"`
-	Status    string `json:"status"` // done | failed | skipped | deleted
-	Reactions string `json:"reactions,omitempty"`
-	Lang      string `json:"lang_detected,omitempty"`
-	CreatedAt string `json:"created_at"`
+	ID           int64  `json:"id"`
+	ChatID       int64  `json:"chat_id"`
+	TgMsgID      int64  `json:"tg_msg_id"`
+	Direction    string `json:"direction"` // "in" | "out"
+	Source       string `json:"source_text"`
+	Target       string `json:"target_text"`
+	Status       string `json:"status"` // done | failed | skipped | deleted
+	Reactions    string `json:"reactions,omitempty"`
+	ReplyTo      int64  `json:"reply_to,omitempty"`
+	ReplySnippet string `json:"reply_snippet,omitempty"`
+	Lang         string `json:"lang_detected,omitempty"`
+	CreatedAt    string `json:"created_at"`
 }
 
 // PayloadFromMessage converts a stored row into its wire shape.
 func PayloadFromMessage(m *store.Message) MsgPayload {
 	return MsgPayload{
-		ID:        m.ID,
-		ChatID:    m.ChatID,
-		TgMsgID:   m.TgMsgID,
-		Direction: m.Direction,
-		Source:    m.SourceText,
-		Target:    m.TargetText,
-		Status:    m.Status,
-		Reactions: m.Reactions,
-		Lang:      m.LangDetected,
-		CreatedAt: m.CreatedAt,
+		ID:           m.ID,
+		ChatID:       m.ChatID,
+		TgMsgID:      m.TgMsgID,
+		Direction:    m.Direction,
+		Source:       m.SourceText,
+		Target:       m.TargetText,
+		Status:       m.Status,
+		Reactions:    m.Reactions,
+		ReplyTo:      m.ReplyTo,
+		ReplySnippet: m.ReplySnippet,
+		Lang:         m.LangDetected,
+		CreatedAt:    m.CreatedAt,
 	}
 }
 

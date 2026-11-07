@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -107,9 +108,13 @@ func (p *Pipeline) OnTGMessage(m tggw.TGMessage) {
 	}
 
 	// Idempotency covers both directions: the server may echo our own
-	// API sends back as UpdateNewMessage, which must not double-insert.
+	// API sends back as UpdateNewMessage, and occasionally re-deliver
+	// them as UpdateEditMessage (a service-side metadata refresh) —
+	// either would duplicate the panel bubble. Outgoing edits are not
+	// tracked at all: the row already holds what the user sent, and an
+	// edit revision would render as a stray untranslated bubble.
 	existing, _ := p.store.GetByTgMsg(chatID, int64(m.MsgID))
-	if existing != nil && !m.Edit {
+	if existing != nil && (!m.Edit || m.Out) {
 		return
 	}
 	rev := 0
@@ -129,13 +134,28 @@ func (p *Pipeline) OnTGMessage(m tggw.TGMessage) {
 	if !translate {
 		status = "skipped"
 	}
+	// Quoted messages: resolve the display snippet once, at insert time,
+	// so history reloads never need per-row lookups. A manually selected
+	// quote from the sender wins over our own stored copy.
+	replyTo, replySnippet := int64(0), ""
+	if m.ReplyTo > 0 {
+		replyTo = m.ReplyTo
+		replySnippet = m.Quote
+		if replySnippet == "" {
+			if orig, err := p.store.GetByTgMsg(chatID, m.ReplyTo); err == nil && orig != nil {
+				replySnippet = replySnippetOf(orig)
+			}
+		}
+	}
 	row := &store.Message{
-		ChatID:     chatID,
-		TgMsgID:    int64(m.MsgID),
-		EditRev:    rev,
-		Direction:  direction,
-		SourceText: m.Text,
-		Status:     status,
+		ChatID:       chatID,
+		TgMsgID:      int64(m.MsgID),
+		EditRev:      rev,
+		Direction:    direction,
+		SourceText:   m.Text,
+		Status:       status,
+		ReplyTo:      replyTo,
+		ReplySnippet: replySnippet,
 	}
 	rowID, err := p.store.InsertMessage(row)
 	if err != nil {
@@ -154,6 +174,20 @@ func (p *Pipeline) OnTGMessage(m tggw.TGMessage) {
 	if chat.Enabled || m.Out {
 		p.enqueue(chatID, job{incoming: &incomingJob{rowID: rowID, chatID: chatID, translate: translate}})
 	}
+}
+
+// replySnippetOf picks the Chinese side of the quoted row for display:
+// what the user typed on outgoing rows, the translation on incoming.
+func replySnippetOf(orig *store.Message) string {
+	text := orig.TargetText
+	if orig.Direction == "out" || text == "" {
+		text = orig.SourceText
+	}
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) > 120 {
+		return string(runes[:120]) + "…"
+	}
+	return string(runes)
 }
 
 // OnReadOutbox receives the peer's read watermark as soon as Telegram
@@ -397,8 +431,9 @@ func (p *Pipeline) processOutgoing(oj *outgoingJob) {
 		return
 	}
 
-	// Non-Chinese input (Ukrainian, English, emoji) is delivered as-is.
-	if !ctxengine.IsChinese(oj.text) {
+	// Input without real Chinese content (Ukrainian, English, emoji,
+	// pure brand names) is delivered as-is; see ctxengine.HasChineseInput.
+	if !ctxengine.HasChineseInput(oj.text) {
 		msgID, err := sender.SendText(p.ctx, *chat, oj.text)
 		if err != nil {
 			reply(OutResult{Err: err})
