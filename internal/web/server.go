@@ -15,6 +15,7 @@ import (
 	"html/template"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -46,6 +47,7 @@ type Server struct {
 	bus      *pipeline.Bus
 	secret   []byte
 	tg       TGAuth
+	guard    *loginGuard
 	assetVer string // content hash of embedded assets, for cache-busting URLs
 }
 
@@ -57,6 +59,7 @@ func New(cfg config.Server, st *store.Store, pipe *pipeline.Pipeline, bus *pipel
 	return &Server{
 		cfg: cfg, store: st, pipe: pipe, bus: bus,
 		secret: sum[:], tg: tg,
+		guard:    newLoginGuard(),
 		assetVer: hex.EncodeToString(ver[:])[:8],
 	}, nil
 }
@@ -306,7 +309,14 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if !s.guard.allow(ip) {
+		slog.Warn("login banned ip", "remote", ip)
+		http.Error(w, "失败次数过多,请一小时后再试", http.StatusForbidden)
+		return
+	}
 	if subtleEqual(r.FormValue("password"), s.cfg.Password) {
+		s.guard.clear(ip)
 		http.SetCookie(w, &http.Cookie{
 			Name: cookieName, Value: s.issueSession(), Path: "/",
 			HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 7 * 24 * 3600,
@@ -314,7 +324,8 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
-	slog.Warn("login failed", "remote", r.RemoteAddr)
+	s.guard.fail(ip)
+	slog.Warn("login failed", "remote", ip)
 	time.Sleep(500 * time.Millisecond) // crude brute-force damping
 	http.Redirect(w, r, "/login?e=1", http.StatusFound)
 }

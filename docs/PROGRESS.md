@@ -33,6 +33,8 @@ config.yaml 两行 + systemctl restart tgbridge 即可,session 无需重登。**
 - DeepSeek key 验证通过(2026-10-20):deepseek-chat 实际路由至
   V4.1-Flash(context 1M),OpenAI 兼容字段与客户端解析匹配
   (prompt_cache_hit_tokens / prompt_tokens_details 双字段)。
+- 面板防爆破(2026-11-09 上线):同一来源 IP 15 分钟内错 10 次密码即封
+  1 小时(内存态,重启解除);上线当天已实测挡住一轮境外 IP 的爆破扫描。
 - 服务器无 nginx/caddy:面板当前为 HTTP 明文 + 密码,建议补 TLS 反代。
 
 ### 完成授权(用户操作,浏览器内)
