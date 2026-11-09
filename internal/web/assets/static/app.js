@@ -300,6 +300,7 @@ async function loadMessages(before) {
       const m = list[i];
       if (!seen.has(m.id)) {
         seen.add(m.id);
+        msgCache.set(m.id, m); // keep the tick-flip cache complete for paged rows too
         msgsEl.prepend(renderMsg(m));
       }
       oldest = Math.min(oldest || Infinity, m.id);
@@ -364,7 +365,9 @@ async function sendMsg() {
 
   try {
     const r = await api(`/api/chats/${current.id}/send`, { method: "POST", body: JSON.stringify({ text }) });
-    replaceTemp(tempId, { id: r.row_id, direction: "out", source_text: text, target_text: r.target, status: "done", created_at: new Date().toISOString() });
+    // tg_msg_id is required by the live ✓→✓✓ flip; without it the tick
+    // never updates until a reload re-fetches the row from the API.
+    replaceTemp(tempId, { id: r.row_id, tg_msg_id: r.msg_id, direction: "out", source_text: text, target_text: r.target, status: "done", created_at: new Date().toISOString() });
   } catch (e) {
     replaceTemp(tempId, { id: "fail-" + tempSeq, direction: "out", source_text: text, target_text: "", status: "failed", created_at: new Date().toISOString() });
     toast("发送失败: " + e.message);
