@@ -23,7 +23,7 @@ config.yaml 两行 + systemctl restart tgbridge 即可,session 无需重登。**
   env(面板密码,600), data/}。
 - systemd 单元:/etc/systemd/system/tgbridge.service,EnvironmentFile=
   /opt/tgbridge/env;服务运行中(active),Telegram 已授权在线。
-- 面板:**https://tg.<your-domain>(推荐,Cloudflare Tunnel 接入)**
+- 面板:**https://tg.<your-domain>(推荐,Cloudflare 橙云 A 记录接入)**
   或 http://<your-server>:18080(仅限 SSH 隧道/内网使用)。**2026-11-09
   迁移后的新服务器 IP 被墙按端口丢包:大陆方向只有 SSH 端口可达,
   网页端口(含 18080)全部静默丢弃,境外访问正常——直连 IP:18080 在
@@ -39,15 +39,17 @@ config.yaml 两行 + systemctl restart tgbridge 即可,session 无需重登。**
   (prompt_cache_hit_tokens / prompt_tokens_details 双字段)。
 - 面板防爆破(2026-11-09 上线):同一来源 IP 15 分钟内错 10 次密码即封
   1 小时(内存态,重启解除);上线当天已实测挡住一轮境外 IP 的爆破扫描。
-- **Cloudflare Tunnel 接入(2026-11-17 上线)**:cloudflared(官方 apt 源
-  pkg.cloudflare.com)+ 专用 systemd 单元 tgbridge-cfd(`tunnel run
-  tgbridge`,配置 /etc/cloudflared/config.yml:tg.<your-domain> →
-  http://127.0.0.1:18080)。隧道自动生成的 CNAME 与边缘 TLS 使面板
-  在大陆可达且源站 IP/端口零暴露;SSE 兼容(25s 心跳压住 CF 100s 空闲
-  超时)。**注意:服务器上另有用户自己的 cloudflared.service(token 模式
-  隧道,平时 stopped),与 tgbridge-cfd 无关,勿动勿启**。选隧道而非
-  传统 A 记录的原因:zone SSL 模式是共享设置(同 zone 有其他明文回源
-  站,改动有波及面),隧道把回源加密/端口与 zone 配置彻底解耦。
+- **Cloudflare 传统解析接入(2026-11-17 上线,替代当日的隧道方案)**:
+  zone 的 A 记录 `tg`/`shop` 橙云 → 源站 apache :80 按 Host 分流
+  (sites-enabled/tg.conf 反代 127.0.0.1:18080,faka.conf 是 shop 站,
+  从 28080 挪到 80);zone SSL 模式设为 **flexible**(CF→源站明文,
+  升级路径:apache 加自签证书 vhost 后切 full)。**visitor→CF 段是
+  HTTPS,大陆可达**;SSE 经 apache mod_proxy + CF 实测可用(25s 心跳
+  压住 CF 100s 空闲超时)。曾试过 cloudflared 隧道方案(两台 daemon
+  + CNAME),按用户决定全部退役:CF 侧两条隧道对象已删,服务器侧
+  cloudflared 已 purge,单元文件已清。**注意:zone 上唯一的 A 记录
+  站就是 tg/shop;mineakey 的域名不在本 zone,不受 SSL 模式影响,
+  勿动**。cookie 鉴权、面板防爆破与 SSE 行为均不受反代影响。
 
 ### 完成授权(用户操作,浏览器内)
 
